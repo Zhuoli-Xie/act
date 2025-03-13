@@ -16,7 +16,7 @@ from utils import compute_dict_mean, set_seed, detach_dict # helper functions
 from policy import ACTPolicy, CNNMLPPolicy
 from visualize_episodes import save_videos
 
-from sim_env import BOX_POSE
+# from sim_env import BOX_POSE
 
 import IPython
 e = IPython.embed
@@ -39,7 +39,7 @@ def main(args):
         from constants import SIM_TASK_CONFIGS
         task_config = SIM_TASK_CONFIGS[task_name]
     else:
-        from aloha_scripts.constants import TASK_CONFIGS
+        from constants import TASK_CONFIGS
         task_config = TASK_CONFIGS[task_name]
     dataset_dir = task_config['dataset_dir']
     num_episodes = task_config['num_episodes']
@@ -47,7 +47,7 @@ def main(args):
     camera_names = task_config['camera_names']
 
     # fixed parameters
-    state_dim = 14
+    state_dim = 15   # 7*2 + 1
     lr_backbone = 1e-5
     backbone = 'resnet18'
     if policy_class == 'ACT':

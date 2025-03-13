@@ -7,6 +7,19 @@ from torch.utils.data import TensorDataset, DataLoader
 import IPython
 e = IPython.embed
 
+def inspect_h5(file_path):
+    with h5py.File(file_path, 'r') as f:
+        def print_attrs(name, obj):
+            if isinstance(obj, h5py.Dataset):
+                print(f"  Dataset: {name}")
+                print(f"    Shape: {obj.shape}")
+                print(f"    Dtype: {obj.dtype}")
+            elif isinstance(obj, h5py.Group):
+                print(f"Group: {name}")
+
+        # 递归遍历所有组和数据集
+        f.visititems(print_attrs)
+
 class EpisodicDataset(torch.utils.data.Dataset):
     def __init__(self, episode_ids, dataset_dir, camera_names, norm_stats):
         super(EpisodicDataset).__init__()
@@ -26,7 +39,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
         episode_id = self.episode_ids[index]
         dataset_path = os.path.join(self.dataset_dir, f'episode_{episode_id}.hdf5')
         with h5py.File(dataset_path, 'r') as root:
-            is_sim = root.attrs['sim']
+            is_sim = False
             original_action_shape = root['/action'].shape
             episode_len = original_action_shape[0]
             if sample_full_episode:
@@ -34,11 +47,11 @@ class EpisodicDataset(torch.utils.data.Dataset):
             else:
                 start_ts = np.random.choice(episode_len)
             # get observation at start_ts only
-            qpos = root['/observations/qpos'][start_ts]
-            qvel = root['/observations/qvel'][start_ts]
+            qpos = root['/action'][start_ts]
+            # qvel = root['/observations/qvel'][start_ts]
             image_dict = dict()
-            for cam_name in self.camera_names:
-                image_dict[cam_name] = root[f'/observations/images/{cam_name}'][start_ts]
+            for cam_name in self.camera_names:  # camera_names = ['right', 'left']
+                image_dict[cam_name] = root[f'/images/{cam_name}'][start_ts]
             # get all actions after and including start_ts
             if is_sim:
                 action = root['/action'][start_ts:]
@@ -48,9 +61,9 @@ class EpisodicDataset(torch.utils.data.Dataset):
                 action_len = episode_len - max(0, start_ts - 1) # hack, to make timesteps more aligned
 
         self.is_sim = is_sim
-        padded_action = np.zeros(original_action_shape, dtype=np.float32)
+        padded_action = np.zeros((550, 15), dtype=np.float32)
         padded_action[:action_len] = action
-        is_pad = np.zeros(episode_len)
+        is_pad = np.zeros(550)
         is_pad[action_len:] = 1
 
         # new axis for different cameras
@@ -79,26 +92,35 @@ class EpisodicDataset(torch.utils.data.Dataset):
 def get_norm_stats(dataset_dir, num_episodes):
     all_qpos_data = []
     all_action_data = []
+    episode_lengths = []
+
     for episode_idx in range(num_episodes):
         dataset_path = os.path.join(dataset_dir, f'episode_{episode_idx}.hdf5')
         with h5py.File(dataset_path, 'r') as root:
-            qpos = root['/observations/qpos'][()]
-            qvel = root['/observations/qvel'][()]
+            qpos = root['/action'][()]
+            # qvel = root['/observations/qvel'][()]
             action = root['/action'][()]
         all_qpos_data.append(torch.from_numpy(qpos))
         all_action_data.append(torch.from_numpy(action))
-    all_qpos_data = torch.stack(all_qpos_data)
-    all_action_data = torch.stack(all_action_data)
-    all_action_data = all_action_data
+        episode_lengths.append(len(qpos)) 
 
-    # normalize action data
-    action_mean = all_action_data.mean(dim=[0, 1], keepdim=True)
-    action_std = all_action_data.std(dim=[0, 1], keepdim=True)
+    episode_qpos_means = []  
+    episode_qpos_stds = []  
+    episode_action_means = []  
+    episode_action_stds = []
+
+    for i in range(num_episodes):  
+        episode_qpos_means.append(all_qpos_data[i].mean(dim=0))  
+        episode_qpos_stds.append(all_qpos_data[i].std(dim=0))  
+        episode_action_means.append(all_action_data[i].mean(dim=0))  
+        episode_action_stds.append(all_action_data[i].std(dim=0)) 
+
+    qpos_mean = torch.stack(episode_qpos_means).mean(dim=0, keepdim=True)  
+    qpos_std = torch.stack(episode_qpos_stds).mean(dim=0, keepdim=True)  
+    action_mean = torch.stack(episode_action_means).mean(dim=0, keepdim=True)  
+    action_std = torch.stack(episode_action_stds).mean(dim=0, keepdim=True) 
+
     action_std = torch.clip(action_std, 1e-2, np.inf) # clipping
-
-    # normalize qpos data
-    qpos_mean = all_qpos_data.mean(dim=[0, 1], keepdim=True)
-    qpos_std = all_qpos_data.std(dim=[0, 1], keepdim=True)
     qpos_std = torch.clip(qpos_std, 1e-2, np.inf) # clipping
 
     stats = {"action_mean": action_mean.numpy().squeeze(), "action_std": action_std.numpy().squeeze(),
