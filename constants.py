@@ -1,4 +1,3 @@
-import pathlib
 
 ### Task parameters
 DATA_DIR = '/shared/user/zhuoli.xie'
@@ -6,7 +5,7 @@ TASK_CONFIGS = {
     'pruning':{
         'dataset_dir': DATA_DIR + '/pruning_data',
         'num_episodes': 19,
-        'episode_len': 550,   # 这个是什么
+        'episode_len': 550, 
         'camera_names': ['right', 'left']
     },
 }
