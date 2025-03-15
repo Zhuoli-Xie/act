@@ -32,8 +32,10 @@ robot.set_arm_state(2, 0)
 
 USE_REAL_CAMERA = True
 
-left_images = deque(maxlen=15)
-right_images = deque(maxlen=15)
+left_images_deque = deque(maxlen=5)
+right_images_deque = deque(maxlen=5)
+left_lock = threading.Lock()
+right_lock = threading.Lock()
 
 def evaluate(args):
     set_seed(1)
@@ -111,10 +113,12 @@ def get_image(camera_names):
     curr_images = []
     for cam_name in camera_names:
         if cam_name == 'left':
-            curr_image = rearrange(left_images[-1], 'h w c -> c h w')
+            with left_lock:
+                curr_image = rearrange(left_images_deque[-1], 'h w c -> c h w')
             curr_images.append(curr_image)
         elif cam_name == 'right':
-            curr_image = rearrange(right_images[-1], 'h w c -> c h w')
+            with right_lock:
+                curr_image = rearrange(right_images_deque[-1], 'h w c -> c h w')
             curr_images.append(curr_image)
     curr_image = np.stack(curr_images, axis=0)
     curr_image = torch.from_numpy(curr_image / 255.0).float().cuda().unsqueeze(0)
@@ -205,9 +209,9 @@ def eval_bc(config, ckpt_name, save_episode=True):
             wait = 0
 
             # 这儿需要插值吗
-            robot.set_arm_servo_angle_j(1, l_angles, speed, acc, wait)
-            robot.set_arm_servo_angle_j(2, r_angles, speed, acc, wait)
-            robot.set_gripper_position(1, g_angles)
+            # robot.set_arm_servo_angle_j(1, l_angles, speed, acc, wait)
+            # robot.set_arm_servo_angle_j(2, r_angles, speed, acc, wait)
+            # robot.set_gripper_position(1, g_angles)
 
             ### for visualization
             qpos_list.append(qpos_numpy)
@@ -222,18 +226,18 @@ class CameraNode(Node):
         super().__init__(name)
         self.is_debug = is_debug
         self.bridge = CvBridge()
-        self.camera_names = ['cam_right', 'cam_left']
+        self.camera_names = ['right', 'left']
         for cam_name in self.camera_names:
             setattr(self, f'{cam_name}_image', None)
             setattr(self, f'{cam_name}_secs', None) 
             setattr(self, f'{cam_name}_nsecs', None)
-            if cam_name == 'cam_right':
+            if cam_name == 'right':
                 callback_func = self.image_cb_cam_right
-            elif cam_name == 'cam_left':
+            elif cam_name == 'left':
                 callback_func = self.image_cb_cam_left
             else:
                 raise NotImplementedError
-            self.create_subscription(Image, f"/usb_{cam_name}/image_raw", callback_func, 10) # edit it
+            self.create_subscription(Image, f"/{cam_name}/color/image_raw", callback_func, 10) # edit it
             if self.is_debug:
                 setattr(self, f'{cam_name}_timestamps', deque(maxlen=50))
         time.sleep(0.5)
@@ -246,14 +250,16 @@ class CameraNode(Node):
             getattr(self, f'{cam_name}_timestamps').append(data.header.stamp.secs + data.header.stamp.nsecs * 1e-9)
 
     def image_cb_cam_right(self, data):
-        cam_name = 'cam_right'
+        cam_name = 'right'
         self.image_cb(cam_name, data)
-        left_images.append(getattr(self, f'{cam_name}_image'))
+        with left_lock:
+            left_images_deque.append(getattr(self, f'{cam_name}_image'))
 
     def image_cb_cam_left(self, data):
-        cam_name = 'cam_left'
+        cam_name = 'left'
         self.image_cb(cam_name, data)
-        right_images.append(getattr(self, f'{cam_name}_image'))
+        with right_lock:
+            right_images_deque.append(getattr(self, f'{cam_name}_image'))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -280,8 +286,21 @@ if __name__ == '__main__':
         thread_node = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
         thread_node.start()
     
-    while len(left_images) != 15 and len(right_images) != 15:
-        print(f"当前队列长度：{(len(left_images), len(right_images))}，等待填充...") 
-        time.sleep(0.5) 
+    try:
+        while True:
+            with left_lock:
+                left_len = len(left_images_deque)
+            with right_lock:
+                right_len = len(right_images_deque)
+            if left_len != 5 and right_len != 5:
+                print(f"当前队列长度：{(len(left_images_deque), len(right_images_deque))}，等待填充...") 
+                time.sleep(0.5) 
+            else:
+                break
 
-    evaluate(vars(parser.parse_args()))
+        evaluate(vars(parser.parse_args()))
+    except KeyboardInterrupt:
+        print("程序被用户中断")
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
