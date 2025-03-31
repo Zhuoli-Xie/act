@@ -55,7 +55,7 @@ def evaluate(args):
     camera_names = task_config['camera_names']
 
     # fixed parameters
-    state_dim = 8
+    state_dim = 15
     lr_backbone = 1e-5
     backbone = 'resnet18'
     if policy_class == 'ACT':
@@ -94,8 +94,8 @@ def evaluate(args):
     ckpt_names = [f'policy_best.ckpt']
     for ckpt_name in ckpt_names:
         eval_bc(config, ckpt_name, save_episode=True)
-    # print()
-    # exit()
+    print()
+    exit()
 
 def make_policy(policy_class, policy_config):
     if policy_class == 'ACT':
@@ -158,7 +158,7 @@ def eval_bc(config, ckpt_name, save_episode=True):
     pre_process = lambda s_qpos: (s_qpos - stats['qpos_mean']) / stats['qpos_std']
     post_process = lambda a: a * stats['action_std'] + stats['action_mean']
 
-    id = [6, 7, 8, 9, 10, 11, 12]
+    id = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
 
     max_timesteps = int(max_timesteps * 3) # may increase for real-world tasks
 
@@ -173,7 +173,7 @@ def eval_bc(config, ckpt_name, save_episode=True):
     qpos_list = []
     target_qpos_list = []
     FIRST_FLAG = True
-    num_steps = 800
+    num_steps = 600
 
     with torch.inference_mode():
         for t in range(max_timesteps):
@@ -214,25 +214,25 @@ def eval_bc(config, ckpt_name, save_episode=True):
             ### send joints
             l_angles = target_qpos[:7]
             # r_angles = target_qpos[7:14]
-            g_angles = target_qpos[7]
+            g_angles = target_qpos[14]
             speed = 0
             acc = 0
             wait = 0
 
-            js_array = np.array(js_position)  
-            l_array = np.array(l_angles)  
+            # js_array = np.array(js_position)  
+            # l_array = np.array(l_angles)  
             
-            diffs = np.abs(js_array - l_array)  
-            max_diff = np.max(diffs)  
+            # diffs = np.abs(js_array - l_array)  
+            # max_diff = np.max(diffs)  
 
             # 这儿需要插值吗，对第一次值进行插值
-            if max_diff > 0.08:
-                interpolated_positions = linear_interpolate(js_position, l_angles, num_steps=num_steps)
-                for j in range(num_steps):
-                    robot.set_arm_servo_angle_j(1, interpolated_positions[j], 0, 0, 0)
-                    time.sleep(0.05 / num_steps)
-            else:
-                robot.set_arm_servo_angle_j(1, l_angles, speed, acc, wait)
+            # if max_diff > 0.08:
+            #     interpolated_positions = linear_interpolate(js_position, l_angles, num_steps=num_steps)
+            #     for j in range(num_steps):
+            #         robot.set_arm_servo_angle_j(1, interpolated_positions[j], 0, 0, 0)
+            #         time.sleep(0.05 / num_steps)
+            # else:
+            #     robot.set_arm_servo_angle_j(1, l_angles, speed, acc, wait)
                 # robot.set_arm_servo_angle_j(2, r_angles, speed, acc, wait)
             # if FIRST_FLAG:
             #     interpolated_positions = linear_interpolate(js_position, l_angles, num_steps=num_steps)
@@ -242,10 +242,7 @@ def eval_bc(config, ckpt_name, save_episode=True):
             # else:
             #     robot.set_arm_servo_angle_j(1, l_angles, speed, acc, wait)
 
-            # robot.set_arm_servo_angle_j(1, l_angles, speed, acc, wait)
-            if g_angles < 0.029:
-                return
-            
+            robot.set_arm_servo_angle_j(1, l_angles, speed, acc, wait)
             robot.set_gripper_position(1, g_angles)
             FIRST_FLAG = False
 
@@ -321,67 +318,22 @@ if __name__ == '__main__':
         node = CameraNode("camera_node")
         thread_node = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
         thread_node.start()
-
-    while True:
-        with left_lock:
-            left_len = len(left_images_deque)
-        with right_lock:
-            right_len = len(right_images_deque)
-        if left_len != 5 and right_len != 5:
-            print(f"当前队列长度：{(len(left_images_deque), len(right_images_deque))}，等待填充...") 
-            time.sleep(0.5) 
-        else:
-            break
-
-    count = 0
     
-    while True:
-        try:
-            robot.set_arm_mode(1, 1) 
-            robot.set_arm_state(1, 0)
-            evaluate(vars(parser.parse_args())) 
-            
-        except KeyboardInterrupt:
-            print("程序被用户中断")
-        finally:
-            time.sleep(3)
-            robot.set_arm_mode(1, 0) 
-            robot.set_arm_state(1, 0)
-            if count % 16 == 0:
-                robot.set_arm_servo_angle(1, [-1.270237684249878, 1.1414433717727661, 1.305875301361084, -1.8208286762237549, -1.569324254989624, 0.818896472454071, -0.6894323229789734], 0, 0, 0)
-            if count % 16 == 1:
-                robot.set_arm_servo_angle(1, [-1.250237684249878, 1.1414433717727661, 1.305875301361084, -1.8208286762237549, -1.569324254989624, 0.818896472454071, -0.6894323229789734], 0, 0, 0)
-            if count % 16 == 2:
-                robot.set_arm_servo_angle(1, [-1.270237684249878, 1.1214433717727661, 1.305875301361084, -1.8208286762237549, -1.569324254989624, 0.818896472454071, -0.6894323229789734], 0, 0, 0)
-            if count % 16 == 3:
-                robot.set_arm_servo_angle(1, [-1.270237684249878, 1.1614433717727661, 1.305875301361084, -1.8208286762237549, -1.569324254989624, 0.818896472454071, -0.6894323229789734], 0, 0, 0)
-            if count % 16 == 4:
-                robot.set_arm_servo_angle(1, [-1.290237684249878, 1.1214433717727661, 1.305875301361084, -1.8208286762237549, -1.569324254989624, 0.818896472454071, -0.6894323229789734], 0, 0, 0)
-            if count % 16 == 5:
-                robot.set_arm_servo_angle(1, [-1.270237684249878, 1.1214433717727661, 1.200875301361084, -1.8208286762237549, -1.569324254989624, 0.818896472454071, -0.6894323229789734], 0, 0, 0)
-            if count % 16 == 6:
-                robot.set_arm_servo_angle(1, [-1.270237684249878, 1.1414433717727661, 1.305875301361084, -1.8208286762237549, -1.569324254989624, 0.818896472454071, -0.6894323229789734], 0, 0, 0)
-            if count % 16 == 7:
-                robot.set_arm_servo_angle(1, [-1.270237684249878, 1.1214433717727661, 1.150875301361084, -1.8208286762237549, -1.569324254989624, 0.818896472454071, -0.6894323229789734], 0, 0, 0)
-            if count % 16 == 8:
-                robot.set_arm_servo_angle(1, [-1.270237684249878, 1.1414433717727661, 1.305875301361084, -1.8208286762237549, -1.569324254989624, 0.818896472454071, -0.6894323229789734], 0, 0, 0)
-            if count % 16 == 9:
-                robot.set_arm_servo_angle(1, [-1.350237684249878, 1.1414433717727661, 1.305875301361084, -1.8208286762237549, -1.569324254989624, 0.818896472454071, -0.6894323229789734], 0, 0, 0)
-            if count % 16 == 10:
-                robot.set_arm_servo_angle(1, [-1.270237684249878, 1.2014433717727661, 1.305875301361084, -1.8208286762237549, -1.569324254989624, 0.818896472454071, -0.6894323229789734], 0, 0, 0)
-            if count % 16 == 11:
-                robot.set_arm_servo_angle(1, [-1.270237684249878, 1.1414433717727661, 1.355875301361084, -1.8208286762237549, -1.569324254989624, 0.818896472454071, -0.6894323229789734], 0, 0, 0)
-            if count % 16 == 12:
-                robot.set_arm_servo_angle(1, [-1.270237684249878, 1.1414433717727661, 1.305875301361084, -1.8208286762237549, -1.569324254989624, 0.818896472454071, -0.6894323229789734], 0, 0, 0)
-            if count % 16 == 13:
-                robot.set_arm_servo_angle(1, [-1.270237684249878, 1.0014433717727661, 1.305875301361084, -1.8208286762237549, -1.569324254989624, 0.818896472454071, -0.6894323229789734], 0, 0, 0)
-            if count % 16 == 14:
-                robot.set_arm_servo_angle(1, [-1.270237684249878, 1.1414433717727661, 1.305875301361084, -1.8208286762237549, -1.569324254989624, 0.818896472454071, -0.6894323229789734], 0, 0, 0)
-            if count % 16 == 15:
-                robot.set_arm_servo_angle(1, [-1.270237684249878, 0.9614433717727661, 1.305875301361084, -1.8208286762237549, -1.569324254989624, 0.818896472454071, -0.6894323229789734], 0, 0, 0)
-            print(f"count: {count}")
-            count = count + 1
-            time.sleep(8)
+    try:
+        while True:
+            with left_lock:
+                left_len = len(left_images_deque)
+            with right_lock:
+                right_len = len(right_images_deque)
+            if left_len != 5 and right_len != 5:
+                print(f"当前队列长度：{(len(left_images_deque), len(right_images_deque))}，等待填充...") 
+                time.sleep(0.5) 
+            else:
+                break
 
-    # node.destroy_node()
-    # rclpy.shutdown()
+        evaluate(vars(parser.parse_args()))
+    except KeyboardInterrupt:
+        print("程序被用户中断")
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()

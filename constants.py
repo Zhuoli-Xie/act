@@ -4,8 +4,8 @@ DATA_DIR = '/shared/user/zhuoli.xie'
 TASK_CONFIGS = {
     'pruning':{
         'dataset_dir': DATA_DIR + '/pruning_data',
-        'num_episodes': 19,
-        'episode_len': 550, 
+        'num_episodes': 24,
+        'episode_len': 250, 
         'camera_names': ['right', 'left']
     },
 }
